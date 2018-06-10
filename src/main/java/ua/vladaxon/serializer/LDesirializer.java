@@ -21,6 +21,7 @@ public class LDesirializer {
 
     /** Куча десериализируемых объектов. */
     private final Map<Long, Object> heap = new HashMap<Long, Object>();
+    /** Кэш классов. */
     private final Map<Integer, Class<?>> classHeap = new HashMap<>();
 
     /**
@@ -32,6 +33,8 @@ public class LDesirializer {
      * @throws Exception при ошибке считывания
      */
     public Object deserialize(InputStream in, Class<?> rootClass) throws Exception {
+        heap.clear();
+        classHeap.clear();
         DataInputStream din = new DataInputStream(in);
         if (rootClass.isArray()) {
             return readArray(din, rootClass.getComponentType());

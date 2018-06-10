@@ -18,9 +18,11 @@ public class LSerializer {
 
     /** Счетчик идентификаторов объектов. */
     private long objIdentifier = 1;
+    /** Идентификатор сериализуемого класса. */
     private int classIdentifier = 1;
     /** Куча сериализируемых объектов. */
     private final Map<Object, Long> heap = new IdentityHashMap<Object, Long>();
+    /** Кэш классов. */
     private final Map<Class<?>, Integer> classHeap = new IdentityHashMap<Class<?>, Integer>();
 
     /**
@@ -33,6 +35,8 @@ public class LSerializer {
     public void serialize(OutputStream out, Object obj) throws Exception {
         heap.clear();
         objIdentifier = 1;
+        classIdentifier = 1;
+        classHeap.clear();
         DataOutputStream dout = new DataOutputStream(out);
         Class<?> objClass = obj.getClass();
         if (objClass.isArray()) {
@@ -247,6 +251,11 @@ public class LSerializer {
         return objIdentifier++;
     }
 
+    /**
+     * Возвращает идентификатор класса для сериализации.
+     *
+     * @return идентификатор класса
+     */
     private int nextClassID() {
         return classIdentifier++;
     }
