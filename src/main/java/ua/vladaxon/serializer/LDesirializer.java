@@ -9,23 +9,19 @@ import java.lang.reflect.Modifier;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import sun.reflect.ReflectionFactory;
 
 /**
  * Десериализатор объектов. Производит создание объекта из входящего потока.
  *
- * @author axon
+ * @author Vladislav Babushkin
  *
  */
 public class LDesirializer {
 
     /** Куча десериализируемых объектов. */
     private final Map<Long, Object> heap = new HashMap<Long, Object>();
-    /** Логгер. */
-    private static final Logger LOG = LoggerFactory.getLogger(LDesirializer.class);
+    private final Map<Integer, Class<?>> classHeap = new HashMap<>();
 
     /**
      * Производит десериализацию объекта из потока.
@@ -74,13 +70,9 @@ public class LDesirializer {
     private void readClassFields(DataInputStream din, Class<?> objClass, Object obj) throws Exception {
         Class<?> superClazz = objClass.getSuperclass();
         if (superClazz != null && !superClazz.equals(Object.class)) {
-            LOG.debug("Detect superclass {}", superClazz.getName());
             readClassFields(din, superClazz, obj);
         }
         Field[] fields = objClass.getDeclaredFields();
-        if (fields.length > 0) {
-            LOG.debug("Read fields of {} ...", objClass.getName());
-        }
         for (int i = 0; i < fields.length; i++) {
             Field field = fields[i];
             readField(din, field, obj);
@@ -97,11 +89,8 @@ public class LDesirializer {
      */
     private void readField(DataInputStream din, Field field, Object parent) throws Exception {
         field.setAccessible(true);
-        if (Modifier.isStatic(field.getModifiers())) {
-            LOG.debug("Field {} is static, skipping...", field.getName());
-        } else {
+        if (!Modifier.isStatic(field.getModifiers())) {
             Class<?> fieldType = field.getType();
-            LOG.debug("Field \"{}\" of type \"{}\"", field.getName(), fieldType.getSimpleName());
             if (fieldType.isPrimitive()) {
                 readPrimitive(din, field, parent);
             } else {
@@ -111,7 +100,6 @@ public class LDesirializer {
                         field.set(parent, heap.get(objID));
                     } else {
                         Class<?> objType = readClass(din);
-                        LOG.debug("Field object type {}", objType.getName());
                         if (objType.isArray()) {
                             Object array = readArray(din, objType.getComponentType());
                             heap.put(objID, array);
@@ -185,13 +173,10 @@ public class LDesirializer {
      */
     private Object readArray(DataInputStream din, Class<?> compType) throws Exception {
         int length = din.readInt();
-        LOG.debug("Array length {}", length);
         Object array = Array.newInstance(compType, length);
         for (int i = 0; i < length; i++) {
             readArrayElement(din, array, i, compType);
         }
-        LOG.debug("Array {}", array);
-        LOG.debug("Available {}", din.available());
         return array;
     }
 
@@ -240,13 +225,11 @@ public class LDesirializer {
             }
         } else {
             long objID = din.readLong();
-            LOG.debug("Object ID {}", objID);
             if (objID > 0) {
                 if (heap.containsKey(objID)) {
                     Array.set(array, index, heap.get(objID));
                 } else {
                     Class<?> elementType = readClass(din);
-                    LOG.debug("Element of obj {} type {}", objID, elementType.getName());
                     if (elementType.isArray()) {
                         Object objArray = readArray(din, compType);
                         heap.put(objID, objArray);
@@ -291,9 +274,15 @@ public class LDesirializer {
      * @throws Exception при ошибке считывания класса
      */
     private Class<?> readClass(DataInputStream din) throws Exception {
-        char[] nameChars = (char[]) readArray(din, char.class);
-        LOG.debug("Readed class name {}", new String(nameChars));
-        return Class.forName(new String(nameChars));
+        int classID = din.readInt();
+        if (classHeap.containsKey(classID)) {
+            return classHeap.get(classID);
+        } else {
+            char[] nameChars = (char[]) readArray(din, char.class);
+            Class<?> newClass = Class.forName(new String(nameChars));
+            classHeap.put(classID, newClass);
+            return newClass;
+        }
     }
 
 }

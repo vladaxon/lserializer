@@ -8,9 +8,6 @@ import java.lang.reflect.Modifier;
 import java.util.IdentityHashMap;
 import java.util.Map;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Сериализатор объектов. Производит преобразования объекта в байтовое представление.
  *
@@ -21,10 +18,10 @@ public class LSerializer {
 
     /** Счетчик идентификаторов объектов. */
     private long objIdentifier = 1;
+    private int classIdentifier = 1;
     /** Куча сериализируемых объектов. */
     private final Map<Object, Long> heap = new IdentityHashMap<Object, Long>();
-    /** Логгер. */
-    private static final Logger LOG = LoggerFactory.getLogger(LSerializer.class);
+    private final Map<Class<?>, Integer> classHeap = new IdentityHashMap<Class<?>, Integer>();
 
     /**
      * Производит сериализацию объекта.
@@ -72,28 +69,20 @@ public class LSerializer {
         // Заходим рекурсивно в родительские классы
         Class<?> superClazz = clazz.getSuperclass();
         if (superClazz != null && !superClazz.equals(Object.class)) {
-            LOG.debug("Detect superclass {}", superClazz.getName());
             writeClassFields(dout, superClazz, obj);
         }
         // В конце добавляем свои классы
         Field[] fields = clazz.getDeclaredFields();
-        if (fields.length > 0) {
-            LOG.debug("Write fields of {} ...", clazz.getName());
-        }
         for (int i = 0; i < fields.length; i++) {
             Field field = fields[i];
             writeField(field, obj, dout);
         }
-        LOG.debug("Class {} fields serialized", clazz.getName());
     }
 
     private void writeField(Field field, Object obj, DataOutputStream dout) throws Exception {
         field.setAccessible(true);
-        if (Modifier.isStatic(field.getModifiers())) {
-            // LOG.debug("Skip static field \"{}\"", field.getName());
-        } else {
+        if (!Modifier.isStatic(field.getModifiers())) {
             Class<?> fieldType = field.getType();
-            LOG.debug("Field \"{}\" of type \"{}\"", field.getName(), fieldType.getSimpleName());
             if (fieldType.isPrimitive()) {
                 writePrimitive(field, obj, dout);
             } else {
@@ -165,12 +154,10 @@ public class LSerializer {
      */
     private void writeArray(Class<?> arrType, Object array, DataOutputStream dout) throws Exception {
         int length = Array.getLength(array);
-        LOG.debug("Write array of {}, length {}", arrType.getName(), length);
         dout.writeInt(length);
         for (int i = 0; i < length; i++) {
             writeArrayElement(dout, array, i);
         }
-        LOG.debug("Written {}", dout.size());
     }
 
     /**
@@ -218,14 +205,12 @@ public class LSerializer {
             }
         } else {
             Object objElement = Array.get(array, index);
-            LOG.debug("Object element {}", objElement);
             if (objElement == null) {
                 dout.writeLong(0);
             } else if (heap.containsKey(objElement)) {
                 dout.writeLong(heap.get(objElement));
             } else {
                 long objID = nextObjectID();
-                LOG.debug("Object ID {}", objID);
                 dout.writeLong(objID);
                 heap.put(objElement, objID);
                 Class<?> elemType = objElement.getClass();
@@ -262,6 +247,10 @@ public class LSerializer {
         return objIdentifier++;
     }
 
+    private int nextClassID() {
+        return classIdentifier++;
+    }
+
     /**
      * Записывает имя класса в исходящий поток.
      *
@@ -270,9 +259,15 @@ public class LSerializer {
      * @throws Exception при ошибке записи данных
      */
     private void writeClassName(Class<?> clazz, DataOutputStream dout) throws Exception {
-        LOG.debug("Write class name {}", clazz.getName());
-        char[] nameChars = clazz.getName().toCharArray();
-        writeArray(char.class, nameChars, dout);
+        if (classHeap.containsKey(clazz)) {
+            dout.writeInt(classHeap.get(clazz));
+        } else {
+            int classID = nextClassID();
+            dout.writeInt(classID);
+            char[] nameChars = clazz.getName().toCharArray();
+            writeArray(char.class, nameChars, dout);
+            classHeap.put(clazz, classID);
+        }
     }
 
 }
